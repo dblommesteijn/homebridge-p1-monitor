@@ -27,9 +27,9 @@ export class ElectricityAccessory {
   async update(consumption, delivery) {
     this.platform.log.debug('update assessory', this.accessory.context.device.name);
     let value = 0;
-    if(this.accessory.context.device.type == 'consumption') {
+    if(this.accessory.context.device.type === 'consumption') {
       value = consumption[this.accessory.context.device.label];
-    } else if (this.accessory.context.device.type == 'delivery') {
+    } else if (this.accessory.context.device.type === 'delivery') {
       value = delivery[this.accessory.context.device.label];
     }
     if(value <= 0) {

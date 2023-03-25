@@ -65,25 +65,25 @@ export class HomebridgeP1Monitor implements DynamicPlatformPlugin {
 
     const consumption = await this.getConsumption(status);
     assessories.push(this.loadElectricityAccessory('consumption', 'total', 'Consumption Total', consumption.total));
-    if(consumption.L1 != undefined) {
+    if(consumption.L1 !== undefined) {
       assessories.push(this.loadElectricityAccessory('consumption', 'L1', 'Consumption Phase L1', consumption.L1));
     }
-    if(consumption.L2 != undefined) {
+    if(consumption.L2 !== undefined) {
       assessories.push(this.loadElectricityAccessory('consumption', 'L2', 'Consumption Phase L2', consumption.L2));
     }
-    if(consumption.L3 != undefined) {
+    if(consumption.L3 !== undefined) {
       assessories.push(this.loadElectricityAccessory('consumption', 'L3', 'Consumption Phase L3', consumption.L3));
     }
 
     const delivery = await this.getDelivery(status);
     assessories.push(this.loadElectricityAccessory('delivery', 'total', 'Delivery Total', delivery.total));
-    if(delivery.L1 != undefined) {
+    if(delivery.L1 !== undefined) {
       assessories.push(this.loadElectricityAccessory('delivery', 'L1', 'Delivery Phase L1', delivery.L1));
     }
-    if(delivery.L2 != undefined) {
+    if(delivery.L2 !== undefined) {
       assessories.push(this.loadElectricityAccessory('delivery', 'L2', 'Delivery Phase L2', delivery.L2));
     }
-    if(delivery.L3 != undefined) {
+    if(delivery.L3 !== undefined) {
       assessories.push(this.loadElectricityAccessory('delivery', 'L3', 'Delivery Phase L3', delivery.L3));
     }
 
@@ -102,8 +102,8 @@ export class HomebridgeP1Monitor implements DynamicPlatformPlugin {
     }, timeout);
   }
 
-  async getConsumption(status: any) {
-    if(status == undefined) {
+  async getConsumption(status) {
+    if(status === undefined) {
       status = await this.status();
     }
     const consumption = { 'total': 0, 'L1': undefined, 'L2': undefined, 'L3': undefined };
@@ -112,7 +112,7 @@ export class HomebridgeP1Monitor implements DynamicPlatformPlugin {
       const found = state[2].match(exactMatch);
       if (found) {
         this.log.debug('found: ', found[2], state[1]);
-        if (found[1] == 'verbruik') {
+        if (found[1] === 'verbruik') {
           consumption[found[2]] = state[1] as number * 1000;
           consumption['total'] += state[1] as number * 1000 ;
         }
@@ -122,8 +122,8 @@ export class HomebridgeP1Monitor implements DynamicPlatformPlugin {
     return consumption;
   }
 
-  async getDelivery(status: any) {
-    if(status == undefined) {
+  async getDelivery(status) {
+    if(status === undefined) {
       status = await this.status();
     }
     const delivery = { 'total': 0, 'L1': undefined, 'L2': undefined, 'L3': undefined };
@@ -131,7 +131,7 @@ export class HomebridgeP1Monitor implements DynamicPlatformPlugin {
       const exactMatch = new RegExp(/huidige KW (\w+) (L[0-9]) \(\S+\)/i);
       const found = state[2].match(exactMatch);
       if (found) {
-        if (found[1] == 'levering') {
+        if (found[1] === 'levering') {
           delivery[found[2]] = state[1] as number;
           delivery['total'] += state[1] as number;
         }
@@ -145,7 +145,7 @@ export class HomebridgeP1Monitor implements DynamicPlatformPlugin {
       rejectUnauthorized: false, requestCert: false, resolveWithFullResponse: true });
     this.requestAttempts++;
 
-    if (response.statusCode != 200) {
+    if (response.statusCode !== 200) {
       this.log.error('P1 Monitor unexpected response: ', response.statusCode);
       await this.sleepAfterTooManyFailedAttempts();
       return await this.status();
