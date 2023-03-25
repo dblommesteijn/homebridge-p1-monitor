@@ -1,19 +1,19 @@
 import { API, DynamicPlatformPlugin, Logger, PlatformAccessory, PlatformConfig, Service, Characteristic } from 'homebridge';
 
-import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
-import { ExamplePlatformAccessory } from './platformAccessory';
+import request from 'request';
+import util from 'util';
+const requestPromise = util.promisify(request);
 
-/**
- * HomebridgePlatform
- * This class is the main constructor for your plugin, this is where you should
- * parse the user config and discover/register accessories with Homebridge.
- */
-export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
+import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
+import { ElectricityAccessory } from './platformAccessory';
+
+export class HomebridgeP1Monitor implements DynamicPlatformPlugin {
   public readonly Service: typeof Service = this.api.hap.Service;
   public readonly Characteristic: typeof Characteristic = this.api.hap.Characteristic;
 
   // this is used to track restored cached accessories
   public readonly accessories: PlatformAccessory[] = [];
+  private requestAttempts = 0;
 
   constructor(
     public readonly log: Logger,
@@ -22,95 +22,155 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
   ) {
     this.log.debug('Finished initializing platform:', this.config.name);
 
-    // When this event is fired it means Homebridge has restored all cached accessories from disk.
-    // Dynamic Platform plugins should only register new accessories after this event was fired,
-    // in order to ensure they weren't added to homebridge already. This event can also be used
+    if(!this.config.ipAddress) {
+      log.error('Incorrect ip-addres, terminating..');
+    } else {
     // to start discovery of new accessories.
-    this.api.on('didFinishLaunching', () => {
-      log.debug('Executed didFinishLaunching callback');
-      // run the method to discover / register your devices as accessories
-      this.discoverDevices();
-    });
+      this.api.on('didFinishLaunching', () => {
+        log.debug('Executed didFinishLaunching callback');
+        // run the method to discover / register your devices as accessories
+        this.discoverDevices();
+      });
+    }
   }
 
-  /**
-   * This function is invoked when homebridge restores cached accessories from disk at startup.
-   * It should be used to setup event handlers for characteristics and update respective values.
-   */
   configureAccessory(accessory: PlatformAccessory) {
     this.log.info('Loading accessory from cache:', accessory.displayName);
-
-    // add the restored accessory to the accessories cache so we can track if it has already been registered
     this.accessories.push(accessory);
   }
 
-  /**
-   * This is an example method showing how to register discovered accessories.
-   * Accessories must only be registered once, previously created accessories
-   * must not be registered again to prevent "duplicate UUID" errors.
-   */
-  discoverDevices() {
+  loadElectricityAccessory(type: string, label: string, name: string, value: number): ElectricityAccessory {
+    const uuid = this.api.hap.uuid.generate(`p1monitor_${this.config.ipAddress}_${type}_${label}`);
+    const existingAccessory = this.accessories.find(accessory => accessory.UUID === uuid);
+    let assessory;
+    if (existingAccessory) {
+      this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
+      this.api.updatePlatformAccessories([existingAccessory]);
+      assessory = new ElectricityAccessory(this, existingAccessory);
+      // this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [existingAccessory]);
+      // this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [existingAccessory]);
+    } else {
+      this.log.info('Adding new accessory:', uuid);
+      const accessory = new this.api.platformAccessory(name, uuid);
+      accessory.context.device = { 'name': name, 'value': value, 'type': type, 'label': label };
+      assessory = new ElectricityAccessory(this, accessory);
+      this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+    }
+    return assessory;
+  }
 
-    // EXAMPLE ONLY
-    // A real plugin you would discover accessories from the local network, cloud services
-    // or a user-defined array in the platform config.
-    const exampleDevices = [
-      {
-        exampleUniqueId: 'ABCD',
-        exampleDisplayName: 'Bedroom',
-      },
-      {
-        exampleUniqueId: 'EFGH',
-        exampleDisplayName: 'Kitchen',
-      },
-    ];
+  async discoverDevices() {
+    const status = await this.status();
+    const assessories: ElectricityAccessory[] = [];
 
-    // loop over the discovered devices and register each one if it has not already been registered
-    for (const device of exampleDevices) {
+    const consumption = await this.getConsumption(status);
+    assessories.push(this.loadElectricityAccessory('consumption', 'total', 'Consumption Total', consumption.total));
+    if(consumption.L1 != undefined) {
+      assessories.push(this.loadElectricityAccessory('consumption', 'L1', 'Consumption Phase L1', consumption.L1));
+    }
+    if(consumption.L2 != undefined) {
+      assessories.push(this.loadElectricityAccessory('consumption', 'L2', 'Consumption Phase L2', consumption.L2));
+    }
+    if(consumption.L3 != undefined) {
+      assessories.push(this.loadElectricityAccessory('consumption', 'L3', 'Consumption Phase L3', consumption.L3));
+    }
 
-      // generate a unique id for the accessory this should be generated from
-      // something globally unique, but constant, for example, the device serial
-      // number or MAC address
-      const uuid = this.api.hap.uuid.generate(device.exampleUniqueId);
+    const delivery = await this.getDelivery(status);
+    assessories.push(this.loadElectricityAccessory('delivery', 'total', 'Delivery Total', delivery.total));
+    if(delivery.L1 != undefined) {
+      assessories.push(this.loadElectricityAccessory('delivery', 'L1', 'Delivery Phase L1', delivery.L1));
+    }
+    if(delivery.L2 != undefined) {
+      assessories.push(this.loadElectricityAccessory('delivery', 'L2', 'Delivery Phase L2', delivery.L2));
+    }
+    if(delivery.L3 != undefined) {
+      assessories.push(this.loadElectricityAccessory('delivery', 'L3', 'Delivery Phase L3', delivery.L3));
+    }
 
-      // see if an accessory with the same uuid has already been registered and restored from
-      // the cached devices we stored in the `configureAccessory` method above
-      const existingAccessory = this.accessories.find(accessory => accessory.UUID === uuid);
+    this.fetchConsumptionEvery(2000, assessories);
+  }
 
-      if (existingAccessory) {
-        // the accessory already exists
-        this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
+  async fetchConsumptionEvery(timeout: number, assessories) {
+    setInterval(async () => {
+      const status = await this.status();
+      const consumption = await this.getConsumption(status);
+      const delivery = await this.getDelivery(status);
 
-        // if you need to update the accessory.context then you should run `api.updatePlatformAccessories`. eg.:
-        // existingAccessory.context.device = device;
-        // this.api.updatePlatformAccessories([existingAccessory]);
-
-        // create the accessory handler for the restored accessory
-        // this is imported from `platformAccessory.ts`
-        new ExamplePlatformAccessory(this, existingAccessory);
-
-        // it is possible to remove platform accessories at any time using `api.unregisterPlatformAccessories`, eg.:
-        // remove platform accessories when no longer present
-        // this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [existingAccessory]);
-        // this.log.info('Removing existing accessory from cache:', existingAccessory.displayName);
-      } else {
-        // the accessory does not yet exist, so we need to create it
-        this.log.info('Adding new accessory:', device.exampleDisplayName);
-
-        // create a new accessory
-        const accessory = new this.api.platformAccessory(device.exampleDisplayName, uuid);
-
-        // store a copy of the device object in the `accessory.context`
-        // the `context` property can be used to store any data about the accessory you may need
-        accessory.context.device = device;
-
-        // create the accessory handler for the newly create accessory
-        // this is imported from `platformAccessory.ts`
-        new ExamplePlatformAccessory(this, accessory);
-
-        // link the accessory to your platform
-        this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+      for(const assessory of assessories) {
+        assessory.update(consumption, delivery);
       }
+    }, timeout);
+  }
+
+  async getConsumption(status: any) {
+    if(status == undefined) {
+      status = await this.status();
+    }
+    const consumption = { 'total': 0, 'L1': undefined, 'L2': undefined, 'L3': undefined };
+    for(const state of status) {
+      const exactMatch = new RegExp(/huidige KW (\w+) (L[0-9]) \(\S+\)/i);
+      const found = state[2].match(exactMatch);
+      if (found) {
+        this.log.debug('found: ', found[2], state[1]);
+        if (found[1] == 'verbruik') {
+          consumption[found[2]] = state[1] as number * 1000;
+          consumption['total'] += state[1] as number * 1000 ;
+        }
+        this.log.debug(' * consumption: ', consumption);
+      }
+    }
+    return consumption;
+  }
+
+  async getDelivery(status: any) {
+    if(status == undefined) {
+      status = await this.status();
+    }
+    const delivery = { 'total': 0, 'L1': undefined, 'L2': undefined, 'L3': undefined };
+    for(const state of status) {
+      const exactMatch = new RegExp(/huidige KW (\w+) (L[0-9]) \(\S+\)/i);
+      const found = state[2].match(exactMatch);
+      if (found) {
+        if (found[1] == 'levering') {
+          delivery[found[2]] = state[1] as number;
+          delivery['total'] += state[1] as number;
+        }
+      }
+    }
+    return delivery;
+  }
+
+  async status() {
+    const response = await requestPromise({ uri: `http://${this.config.ipAddress}/api/v1/status`, method: 'GET',
+      rejectUnauthorized: false, requestCert: false, resolveWithFullResponse: true });
+    this.requestAttempts++;
+
+    if (response.statusCode != 200) {
+      this.log.error('P1 Monitor unexpected response: ', response.statusCode);
+      await this.sleepAfterTooManyFailedAttempts();
+      return await this.status();
+    }
+
+    const json = JSON.parse(response.body);
+    return json;
+  }
+
+  timeout(ms: number) {
+    return new Promise( resolve => setTimeout(resolve, ms));
+  }
+
+  async sleep(fn, ...args) {
+    await this.timeout(1000);
+    return fn(...args);
+  }
+
+  async sleepAfterTooManyFailedAttempts() {
+    // wait before trying again
+    if(this.requestAttempts > 1) {
+      this.log.info('Unable to find p1monitor consider changing the ip-address, sleeping for 1 second..');
+      await this.sleep(() => {
+        this.log.debug('sleeping...');
+      });
     }
   }
 }
