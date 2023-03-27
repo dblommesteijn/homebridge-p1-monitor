@@ -5,7 +5,9 @@ import util from 'util';
 const requestPromise = util.promisify(request);
 
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
-import { ElectricityAccessory } from './platformAccessory';
+import { MeterAccessory } from './meterAccessory';
+import { GasM3Accessory } from './gasM3Accessory';
+import { ElectricityWattAccessory } from './electricityWattAccessory';
 
 export class HomebridgeP1Monitor implements DynamicPlatformPlugin {
   public readonly Service: typeof Service = this.api.hap.Service;
@@ -39,21 +41,42 @@ export class HomebridgeP1Monitor implements DynamicPlatformPlugin {
     this.accessories.push(accessory);
   }
 
-  loadElectricityAccessory(type: string, label: string, name: string, value: number): ElectricityAccessory {
-    const uuid = this.api.hap.uuid.generate(`p1monitor_${this.config.ipAddress}_${type}_${label}`);
+  loadElectricityWattAccessory(type: string, label: string, name: string, value: number): MeterAccessory {
+    const uuid = this.api.hap.uuid.generate(`p1monitor_${this.config.ipAddress}_${type}_${label}_${name}`);
     const existingAccessory = this.accessories.find(accessory => accessory.UUID === uuid);
     let assessory;
     if (existingAccessory) {
       this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
       this.api.updatePlatformAccessories([existingAccessory]);
-      assessory = new ElectricityAccessory(this, existingAccessory);
+      assessory = new ElectricityWattAccessory(this, existingAccessory);
       // this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [existingAccessory]);
       // this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [existingAccessory]);
     } else {
       this.log.info('Adding new accessory:', uuid);
       const accessory = new this.api.platformAccessory(name, uuid);
       accessory.context.device = { 'name': name, 'value': value, 'type': type, 'label': label };
-      assessory = new ElectricityAccessory(this, accessory);
+      assessory = new ElectricityWattAccessory(this, accessory);
+      this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+    }
+    return assessory;
+  }
+
+  // TODO: almost the same as Electricity Accessory, extract class and done!
+  loadGasM3Accessory(type: string, label: string, name: string, value: number): GasM3Accessory {
+    const uuid = this.api.hap.uuid.generate(`p1monitor_${this.config.ipAddress}_${type}_${label}_${name}`);
+    const existingAccessory = this.accessories.find(accessory => accessory.UUID === uuid);
+    let assessory;
+    if (existingAccessory) {
+      this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
+      this.api.updatePlatformAccessories([existingAccessory]);
+      assessory = new GasM3Accessory(this, existingAccessory);
+      // this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [existingAccessory]);
+      // this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [existingAccessory]);
+    } else {
+      this.log.info('Adding new accessory:', uuid);
+      const accessory = new this.api.platformAccessory(name, uuid);
+      accessory.context.device = { 'name': name, 'value': value, 'type': type, 'label': label };
+      assessory = new GasM3Accessory(this, accessory);
       this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
     }
     return assessory;
@@ -61,83 +84,142 @@ export class HomebridgeP1Monitor implements DynamicPlatformPlugin {
 
   async discoverDevices() {
     const status = await this.status();
-    const assessories: ElectricityAccessory[] = [];
+    const assessories: MeterAccessory[] = [];
 
-    const consumption = await this.getConsumption(status);
-    assessories.push(this.loadElectricityAccessory('consumption', 'total', 'Consumption Total', consumption.total));
-    if(consumption.L1 !== undefined) {
-      assessories.push(this.loadElectricityAccessory('consumption', 'L1', 'Consumption Phase L1', consumption.L1));
-    }
-    if(consumption.L2 !== undefined) {
-      assessories.push(this.loadElectricityAccessory('consumption', 'L2', 'Consumption Phase L2', consumption.L2));
-    }
-    if(consumption.L3 !== undefined) {
-      assessories.push(this.loadElectricityAccessory('consumption', 'L3', 'Consumption Phase L3', consumption.L3));
-    }
-
-    const delivery = await this.getDelivery(status);
-    assessories.push(this.loadElectricityAccessory('delivery', 'total', 'Delivery Total', delivery.total));
-    if(delivery.L1 !== undefined) {
-      assessories.push(this.loadElectricityAccessory('delivery', 'L1', 'Delivery Phase L1', delivery.L1));
-    }
-    if(delivery.L2 !== undefined) {
-      assessories.push(this.loadElectricityAccessory('delivery', 'L2', 'Delivery Phase L2', delivery.L2));
-    }
-    if(delivery.L3 !== undefined) {
-      assessories.push(this.loadElectricityAccessory('delivery', 'L3', 'Delivery Phase L3', delivery.L3));
+    const consumption = await this.getElectricConsumption(status);
+    assessories.push(this.loadElectricityWattAccessory('consumption', 'total', 'Usage Total Watt', consumption.total));
+    assessories.push(this.loadElectricityWattAccessory('consumption', 'day_total', 'Usage Day Total Wh', consumption.day_total));
+    if(this.config.showPhases) {
+      if(consumption.L1 !== undefined) {
+        assessories.push(this.loadElectricityWattAccessory('consumption', 'L1', 'Usage L1 Watt', consumption.L1));
+      }
+      if(consumption.L2 !== undefined) {
+        assessories.push(this.loadElectricityWattAccessory('consumption', 'L2', 'Usage L2 Watt', consumption.L2));
+      }
+      if(consumption.L3 !== undefined) {
+        assessories.push(this.loadElectricityWattAccessory('consumption', 'L3', 'Usage L3 Watt', consumption.L3));
+      }
     }
 
-    this.fetchConsumptionEvery(2000, assessories);
+    const delivery = await this.getElectricDelivery(status);
+    assessories.push(this.loadElectricityWattAccessory('delivery', 'total', 'Return Total Watt', delivery.total));
+    assessories.push(this.loadElectricityWattAccessory('delivery', 'day_total', 'Return Day Total Wh', delivery.day_total));
+    if(this.config.showPhases) {
+      if(delivery.L1 !== undefined) {
+        assessories.push(this.loadElectricityWattAccessory('delivery', 'L1', 'Return L1 Watt', delivery.L1));
+      }
+      if(delivery.L2 !== undefined) {
+        assessories.push(this.loadElectricityWattAccessory('delivery', 'L2', 'Return L2 Watt', delivery.L2));
+      }
+      if(delivery.L3 !== undefined) {
+        assessories.push(this.loadElectricityWattAccessory('delivery', 'L3', 'Return L3 Watt', delivery.L3));
+      }
+    }
+
+    if(this.config.showGas) {
+      const gas = await this.getGas(status);
+      this.log.debug('gas:', gas);
+      assessories.push(this.loadGasM3Accessory('consumption', 'day_total', 'Usage Day Total M3', gas.day_total));
+
+      // TODO: add measures for gas flow per second
+      // assessories.push(this.loadGasM3Accessory('consumption', 'second', 'Usage M3/s', gas.second));
+    }
+
+    // fetch consumption every 5 seconds
+    this.fetchStatusEvery(5000, assessories);
   }
 
-  async fetchConsumptionEvery(timeout: number, assessories) {
+  async fetchStatusEvery(timeout: number, assessories) {
     setInterval(async () => {
       const status = await this.status();
-      const consumption = await this.getConsumption(status);
-      const delivery = await this.getDelivery(status);
-
       for(const assessory of assessories) {
-        assessory.update(consumption, delivery);
+        assessory.update(status);
       }
     }, timeout);
   }
 
-  async getConsumption(status) {
+  async getElectricConsumption(status) {
     if(status === undefined) {
       status = await this.status();
     }
-    const consumption = { 'total': 0, 'L1': undefined, 'L2': undefined, 'L3': undefined };
+    const consumption = { 'day_total': 0, 'total': 0, 'L1': undefined, 'L2': undefined, 'L3': undefined };
     for(const state of status) {
-      const exactMatch = new RegExp(/huidige KW (\w+) (L[0-9]) \(\S+\)/i);
-      const found = state[2].match(exactMatch);
-      if (found) {
-        this.log.debug('found: ', found[2], state[1]);
-        if (found[1] === 'verbruik') {
-          consumption[found[2]] = state[1] as number * 1000;
+      const exactMatchCurrent = new RegExp(/huidige KW (\w+) (L[0-9]) \(\S+\)/i);
+      const foundCurrent = state[2].match(exactMatchCurrent);
+      if (foundCurrent) {
+        this.log.debug('foundCurrent: ', foundCurrent[2], state[1]);
+        if (foundCurrent[1] === 'verbruik') {
+          consumption[foundCurrent[2]] = state[1] as number * 1000;
+          this.log.debug('total: ', state[1], consumption['total']);
           consumption['total'] += state[1] as number * 1000 ;
         }
-        this.log.debug(' * consumption: ', consumption);
+      }
+      const exactMatchTotal = new RegExp(/huidige dag KWh (\w+)/i);
+      const foundTotal = state[2].match(exactMatchTotal);
+      if (foundTotal) {
+        this.log.debug('foundTotal: ', foundTotal[1], state[1]);
+        if (foundTotal[1] === 'verbruik') {
+          this.log.debug('day_total: ', foundTotal[1], state[1]);
+          consumption['day_total'] += state[1] as number * 1000 ;
+        }
       }
     }
+    this.log.debug(' * consumption: ', consumption);
     return consumption;
   }
 
-  async getDelivery(status) {
+  async getElectricDelivery(status) {
     if(status === undefined) {
       status = await this.status();
     }
-    const delivery = { 'total': 0, 'L1': undefined, 'L2': undefined, 'L3': undefined };
+    const delivery = { 'day_total': 0, 'total': 0, 'L1': undefined, 'L2': undefined, 'L3': undefined };
     for(const state of status) {
       const exactMatch = new RegExp(/huidige KW (\w+) (L[0-9]) \(\S+\)/i);
-      const found = state[2].match(exactMatch);
-      if (found) {
-        if (found[1] === 'levering') {
-          delivery[found[2]] = state[1] as number;
-          delivery['total'] += state[1] as number;
+      const foundCurrent = state[2].match(exactMatch);
+      if (foundCurrent) {
+        if (foundCurrent[1] === 'levering') {
+          delivery[foundCurrent[2]] = state[1] as number * 1000;
+          delivery['total'] += state[1] as number * 1000;
+        }
+      }
+      const exactMatchTotal = new RegExp(/huidige dag KWh (\w+)/i);
+      const foundTotal = state[2].match(exactMatchTotal);
+      if(foundTotal){
+        this.log.debug('foundTotal: ', foundTotal[1], state[1]);
+        if (foundTotal[1] === 'geleverd') {
+          this.log.debug('day_total: ', foundTotal[1], state[1]);
+          delivery['day_total'] += state[1] as number * 1000 ;
         }
       }
     }
     return delivery;
+  }
+
+  async getGas(status) {
+    const ret = { 'day_total': 0, 'hour': 0, 'minute': 0, 'second': 0 };
+    if(status === undefined) {
+      status = await this.status();
+    }
+    for(const state of status) {
+      const exactMatchDay = new RegExp(/M3 GAS huidige dag verbruikt:/i);
+      const foundDayTotal = state[2].match(exactMatchDay);
+      if(foundDayTotal) {
+        ret['day_total'] = state[1] as number;
+      }
+      // TODO: add gas flow per second.
+      // NOTE: consumption per hour is not reliable! `M3 GAS verbruikt` keeps increasing while using gas, while gas per hour is not,
+      //  using a devision of 60/60 is therefore worthless.
+
+      // const matchCurrentConsumption = new RegExp(/Gas verbruik per uur:/i);
+      // if (matchCurrentConsumption) {
+      //   ret['hour'] = state[1] as number;
+      //   if( ret['hour'] > 0){
+      //     ret['minute'] = ret['hour'] / 60;
+      //     ret['second'] = ret['minute'] / 60;
+      //   }
+      // }
+    }
+    return ret;
   }
 
   async status() {
@@ -160,14 +242,14 @@ export class HomebridgeP1Monitor implements DynamicPlatformPlugin {
   }
 
   async sleep(fn, ...args) {
-    await this.timeout(1000);
+    await this.timeout(5000);
     return fn(...args);
   }
 
   async sleepAfterTooManyFailedAttempts() {
     // wait before trying again
     if(this.requestAttempts > 1) {
-      this.log.info('Unable to find p1monitor consider changing the ip-address, sleeping for 1 second..');
+      this.log.info('Unable to find p1monitor consider changing the ip-address, sleeping for 5 seconds..');
       await this.sleep(() => {
         this.log.debug('sleeping...');
       });

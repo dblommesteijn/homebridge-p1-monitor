@@ -10,6 +10,18 @@
         "type": "string",
         "required": true,
         "default": "192.168.xxx.xxx"
+      },
+      "showPhases": {
+        "title": "Show the electric Phase info?",
+        "type": "boolean",
+        "required": true,
+        "default": true
+      },
+      "showGas": {
+        "title": "Show Gas info?",
+        "type": "boolean",
+        "required": true,
+        "default": true
       }
     }
   }

@@ -2,7 +2,7 @@
   "private": false,
   "displayName": "P1 monitor",
   "name": "homebridge-p1-monitor",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Exposes electricity consumption and delivery values from the public API of P1 Monitor from ZTATZ to Homebridge",
   "license": "Apache-2.0",
   "repository": {
