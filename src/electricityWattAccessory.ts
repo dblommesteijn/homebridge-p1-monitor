@@ -19,28 +19,29 @@ export class ElectricityWattAccessory extends MeterAccessory {
     this.service = this.accessory.getService(this.platform.Service.LightSensor) ||
       this.accessory.addService(this.platform.Service.LightSensor);
     this.service.setCharacteristic(this.platform.Characteristic.Name, accessory.context.device.name);
-    let value = accessory.context.device.value;
-    if(value < 0.0001) {
-      value = 0.0001;
-    }
-    this.service.getCharacteristic(this.platform.Characteristic.CurrentAmbientLightLevel).updateValue(value);
+
+    this.setValue(accessory.context.device.value);
   }
 
   async update(status) {
     const consumption = await this.platform.getElectricConsumption(status);
     const delivery = await this.platform.getElectricDelivery(status);
 
-    this.platform.log.debug('update assessory electricity', this.accessory.context.device.name);
     let value = 0;
     if(this.accessory.context.device.type === 'consumption') {
       value = consumption[this.accessory.context.device.label];
     } else if (this.accessory.context.device.type === 'delivery') {
       value = delivery[this.accessory.context.device.label];
     }
+
+    this.setValue(value);
+  }
+
+  setValue(value: number) {
+    this.platform.log.debug('electric setValue', this.accessory.context.device.name, value);
     if(value < 0.0001) {
       value = 0.0001;
     }
-    this.platform.log.debug('value', value);
     this.service.getCharacteristic(this.platform.Characteristic.CurrentAmbientLightLevel).updateValue(value);
   }
 }

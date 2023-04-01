@@ -2,7 +2,7 @@ import { Service, PlatformAccessory } from 'homebridge';
 import { MeterAccessory } from './meterAccessory';
 import { HomebridgeP1Monitor } from './platform';
 
-export class GasM3Accessory extends MeterAccessory{
+export class GasM3Accessory extends MeterAccessory {
   private service: Service;
 
   constructor(
@@ -19,21 +19,24 @@ export class GasM3Accessory extends MeterAccessory{
     this.service = this.accessory.getService(this.platform.Service.LightSensor) ||
       this.accessory.addService(this.platform.Service.LightSensor);
     this.service.setCharacteristic(this.platform.Characteristic.Name, accessory.context.device.name);
-    let value = accessory.context.device.value;
-    if(value < 0.0001) {
-      value = 0.0001;
-    }
-    this.service.getCharacteristic(this.platform.Characteristic.CurrentAmbientLightLevel).updateValue(value);
+
+    this.setValue(accessory.context.device.value);
   }
 
   async update(status) {
     const gas = await this.platform.getGas(status);
-    this.platform.log.debug('update assessory gas', this.accessory.context.device.name);
     let value = gas[this.accessory.context.device.label];
     if(value < 0.0001) {
       value = 0.0001;
     }
-    this.platform.log.debug('value', value);
+    this.setValue(value);
+  }
+
+  setValue(value: number) {
+    this.platform.log.debug('gas setValue', this.accessory.context.device.name, value);
+    if(value < 0.0001) {
+      value = 0.0001;
+    }
     this.service.getCharacteristic(this.platform.Characteristic.CurrentAmbientLightLevel).updateValue(value);
   }
 }
